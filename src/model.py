@@ -1,4 +1,4 @@
-from datetime import timedelta, date
+from datetime import timedelta, datetime
 from boltons.iterutils import remap
 import pymysql.cursors
 from tqdm import tqdm
@@ -22,13 +22,13 @@ class Calendario:
         self.mes_atual_numero = None
         self.mes_atual_nome = None
         self.ano_atual = None
-        self.converter_data_str()
+        self.converter_data_str()        
         objeto_dia_ontem = DiaOntem(self.dia_ontem_datatime)
         self.dia_ontem_relatorio_regional = objeto_dia_ontem.data_texto
         objeto_dia_ontem = DiaOntenNacional(self.dia_atual_datatime)
         self.dia_ontem_relatorio_nacional = objeto_dia_ontem.data_texto
 
-    def converter_data_str(self):
+    def converter_data_str(self)->str:
         locale.setlocale(locale.LC_ALL, 'pt_BR.utf8')
         data = dt.datetime.now().date()
 
@@ -47,10 +47,19 @@ class Calendario:
         self.dia_atual_datatime = data
         self.dia_ontem_datatime = data_ontem
 
-
-
+    def converter_data_date(self, data)->datetime:
+        self.data = data
+        self.date_data = datetime.strptime(data, '%d/%m/%Y') 
+        return self.date_data
         pass
 
+    def calcula_diferensa_data(self, data_inicial, data_final):
+        
+        self.diferenca = data_final - data_inicial
+        self.dif_dias = self.diferenca.days
+        self.data_resultado = data_inicial + timedelta(days = self.dif_dias)
+        return self.data_resultado, self.dif_dias
+    
 
 class DiaOntenNacional:
     def __init__(self, data):
@@ -131,7 +140,7 @@ class Unidade:
     email: str
     mcu: str
 
-    def __init__(self, gerencia, nome, sro, vinculacao, email, mcu):
+    def __init__(self, gerencia, nome, sro, vinculacao, email, mcu, cadastro_id):
         self.gerencia = gerencia
         self.nome = nome
         self.sro = sro
@@ -143,6 +152,7 @@ class Unidade:
         self.pendencia = None
         self.percentual = None
         self.data = None
+        self.cadastro_id = cadastro_id
         self.tipo_unidade = None
         self.objetos_ldi = []
         self.objetos_loec = []
@@ -158,26 +168,31 @@ class Unidade:
     def salve_lista_sromonitor_ldi(self, lista_temp) -> None:
         for dic in lista_temp:
             dic['gerencia'] = self.gerencia
-            dic['mcu'] = self.mcu
-            dic['sro'] = self.sro
+            dic['codigoMCU'] = self.mcu
+            dic['codigoSRO'] = self.sro
             dic['nomeUnidade'] = self.nome
             dic['vinculacao'] = self.vinculacao
-            dic['nomeUnidade'] = self.nome
-            dic['vinculacao'] = self.nome
+            dic['cadastro_id'] = self.cadastro_id
             dic.pop('tempo', None)
-
+            d = dic['lancado'][0:10]
+            dic['lancado'] = d
+            pass
             self.objetos_ldi.append(dic)
-
+        pass
 
     def salve_lista_sromonitor_oec(self, lista_temp) -> None:
         for dic in lista_temp:
             dic['gerencia'] = self.gerencia
-            dic['mcu'] = self.mcu
-            dic['sro'] = self.sro
+            dic['codigoMCU'] = self.mcu
+            dic['codigoSRO'] = self.sro
             dic['nomeUnidade'] = self.nome
             dic['vinculacao'] = self.vinculacao
+            dic['cadastro_id'] = self.cadastro_id
             dic.pop('tempo', None)
             dic.pop('prazo', None)
+            dic.pop('comentario', None)
+            d = dic['lancado'][0:10]
+            dic['lancado'] = d
 
             self.objetos_loec.append(dic)
 
@@ -246,6 +261,8 @@ class ConexaoMySql:
 
         with self.conexao_DB.cursor() as c:
             for dado in tqdm(dados, desc=f"Salvando dados em {nome_tabela}"):
+                print('dado')
+            
                 data = dado.get('data')
                 siglaSE = dado.get("siglaSE")
 
@@ -278,7 +295,11 @@ class ConexaoMySql:
 
         with self.conexao_DB.cursor() as c:
             for dado in tqdm(dados, desc=f"Salvando dados em {nome_tabela}"):
+                obj = dado.get("objeto")
+                cod_mcu = dado.get("codigoMCU")
 
+                if self.consulta_presenca_banco(f'{nome_tabela}', 'objeto', obj, 'codigoMCU', cod_mcu) == False:
+                    pass
                     columns = ', '.join("`" + str(x) + "`" for x in dado.keys())
                     values = ', '.join("'" + str(x) + "'" for x in dado.values())
                     sql: str = "INSERT INTO %s ( %s ) VALUES ( %s );" % (f'{nome_tabela}', columns, values)
@@ -330,6 +351,7 @@ class SroMonitor:
         # Limpa dicionario, apaga chaves com valor vazio
         limpa_dict = lambda path, key, value: bool(value)
         dict_limpo = remap(test, visit=limpa_dict)
+        pass
         try:
             dict_pronto = dict_limpo[0]
             return dict_pronto

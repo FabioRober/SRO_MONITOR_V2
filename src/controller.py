@@ -1,5 +1,5 @@
 from src.model import Unidade, Calendario, ConexaoMySql, SroMonitor
-from datetime import timedelta
+from datetime import timedelta, datetime
 from src.constantes import *
 import pymysql.cursors
 from tqdm import tqdm
@@ -23,14 +23,17 @@ class FabricaUnidades:
     def monte_unidades(self, nome: str) -> None:
         print(nome)
         consulta = self.consulta_unidade_DB(nome)
-        consulta = consulta[0]
+        consulta = consulta[0]        
 
         unidade_temp = Unidade(consulta.get('Gerencia'),
                                consulta.get('Unidade'),
                                consulta.get('SRO'),
                                consulta.get('Vinculacao'),
                                consulta.get('email'),
-                               consulta.get('mcu'))
+                               consulta.get('mcu'),
+                               consulta.get('id'))
+
+        pass
         return unidade_temp
 
 
@@ -73,9 +76,10 @@ class GerenciadorBancoDados:
         pesq_nacional['Data_Final'] = self.calendario.dia_ontem_barras
         consulta_sro_monitor = self.sro_monitor.retorne_sro_monitor(URL_BUSCA_SRO_MONITOR, pesq_nacional)
 
+
         retorno = self.calcula_col_pendencia_br(consulta_sro_monitor)
         self.conexao.arquivar_dados(retorno, 'ano_2023')
-
+        teste_conexao = ConexaoMySql('SRO_RS')
     @staticmethod
     def calcula_col_pendencia_br(arquivos: list) -> list:
         for arquivo in arquivos:
@@ -94,6 +98,7 @@ class GerenciadorBancoDados:
 
         pesq_regional['Data_Inicial'] = self.calendario.dia_ontem_relatorio_regional
         pesq_regional['Data_Final'] = self.calendario.dia_ontem_relatorio_regional
+
         self.conexao.deletar_dados_tabela_bd('pendencia_ofensoras')
         consulta_sro_monitor = self.sro_monitor.retorne_sro_monitor(URL_BUSCA_SRO_MONITOR, pesq_regional)
         retorno = self.calcula_col_pendencia_rs(consulta_sro_monitor)
@@ -110,11 +115,13 @@ class GerenciadorBancoDados:
             arquivo['cargaLancada'] = int(arquivo.get('cargaLancada'))
             arquivo['cargaBaixada'] = int(arquivo.get('cargaBaixada'))
 
+
+
         return arquivos
 
 
     def _buscar_unidades_pendentes(self) ->None:
-        dict_loec_ldi = {}
+        
         dict_temp = DICIONARIO_PESQUISA_UNIDADES.copy()
         tipos_listas = ['OEC', 'LDI']
         dict_temp['Tipo'] = None
@@ -145,10 +152,15 @@ class GerenciadorBancoDados:
         for arquivo in arquivos:
             nome = arquivo.get('nomeUnidade')
             unidade_tmp = fabrica_unidade.monte_unidades(nome)
+            arquivo["cadastro_id"] = unidade_tmp.cadastro_id
             arquivo["gerencia"] = unidade_tmp.gerencia
             arquivo["vinculacao"] = unidade_tmp.vinculacao
-            self.lista_unidade_ofensoras.append(arquivo)
+            d = arquivo['data'][0:10]
+            arquivo["data"] = d
 
+
+            self.lista_unidade_ofensoras.append(arquivo)
+        pass
         return self.lista_unidade_ofensoras
 
     def retorne_resultado_objetos(self):
@@ -157,25 +169,34 @@ class GerenciadorBancoDados:
             lista_objs_loec = self.retornar_resultato_tipos("OEC", unidade_temp.sro)
             lista_objs_ldi = self.retornar_resultato_tipos("LDI", unidade_temp.sro)
             if not lista_objs_loec == '':
+
                 unidade_temp.salve_lista_sromonitor_oec(lista_objs_loec)
 
             if not lista_objs_ldi == '':
                 unidade_temp.salve_lista_sromonitor_ldi(lista_objs_ldi)
             self.lista_final.append(unidade_temp)
-        pass
+        
 
     def retornar_resultato_tipos(self, tipo_lista, sro):
         dic_obj_temp = DICIONARIO_PESQUISA_OBJETOS
         dic_obj_temp['Codigo_SRO'] = f'{sro}'
         dic_obj_temp['Tipo_Lista'] = f'{tipo_lista}'
+        data_h = self.calendario.dia_atual_barras
 
         unidade_com_obj = self.sro_monitor.retorne_sro_monitor(URL_BUSCA_SRO_MONITOR_REGIONAL_ONJETOS, dic_obj_temp)
+        for u in unidade_com_obj:
+            t = (u.get('lancado'))[:10]
+
+            d_inicial = self.calendario.converter_data_date(t)
+            d_final = self.calendario.converter_data_date(data_h)
+            resultado = self.calendario.calcula_diferensa_data(d_inicial, d_final)
+        pass
         return unidade_com_obj
 
     def arquivar_pendencia_objetos(self) -> None:
         self.conexao.deletar_dados_tabela_bd('pendencia_loec')
         self.conexao.deletar_dados_tabela_bd('pendencia_ldi')
-        for unidade_temp in self.lista_final:
+        for unidade_temp in tqdm(self.lista_final, desc="Salvando Dados Objetos..."):
             self.conexao.arquivar_dados_objetos(unidade_temp.objetos_loec, 'pendencia_loec')
             self.conexao.arquivar_dados_objetos(unidade_temp.objetos_ldi, 'pendencia_ldi')
 
